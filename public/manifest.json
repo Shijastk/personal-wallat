@@ -1,0 +1,17 @@
+{
+  "name": "Personal Vault",
+  "short_name": "Vault",
+  "description": "Everything important about you. One secure place.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
