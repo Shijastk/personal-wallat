@@ -9,11 +9,19 @@ export function LockScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    unlock(password);
+    setError(null);
+    const result = await unlock(password);
+    if (result.error) {
+      setError(result.error);
+      setPassword('');
+    } else {
+      setPassword('');
+    }
     setLoading(false);
   };
 
@@ -34,26 +42,23 @@ export function LockScreen() {
               type={showPassword ? 'text' : 'password'}
               placeholder="Master password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => { setPassword(e.target.value); setError(null); }}
               required
               autoFocus
               icon={<Lock className="h-5 w-5" />}
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3.5 top-[15px] text-ink-400 hover:text-ink-600"
-            >
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3.5 top-[15px] text-ink-400 hover:text-ink-600">
               {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
             </button>
           </div>
+          {error && <p className="text-sm text-red-500 text-center">{error}</p>}
 
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : 'Unlock Vault'}
           </Button>
         </form>
 
-        <button className="mt-4 flex items-center gap-2 text-sm text-ink-500 hover:text-brand-600 transition">
+        <button type="button" disabled className="mt-4 flex items-center gap-2 text-sm text-ink-400 cursor-not-allowed">
           <Fingerprint className="h-5 w-5" />
           Unlock with biometric
         </button>
