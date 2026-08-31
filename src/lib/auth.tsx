@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { setSessionKey, clearSessionKey, hasSessionKey } from '@/lib/crypto';
+import { setSessionKey, clearSessionKey, hasSessionKey, encryptWithSession, decryptWithSession } from '@/lib/crypto';
 import type { Profile } from '@/lib/types';
 
 interface AuthState {
@@ -14,14 +14,14 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   lock: () => void;
-  unlock: (masterPassword: string) => { error: string | null };
+  unlock: (masterPassword: string) => Promise<{ error: string | null }>;
   refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
-
 const LOCK_TIMEOUT = 5 * 60 * 1000;
 const LOCK_KEY = 'vault-lock-state';
+const VERIFIER_MARKER = 'personal-vault-unlock-verifier-v1';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -37,10 +37,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let lockTimer: ReturnType<typeof setTimeout> | null = null;
-
     const resetLockTimer = () => {
       if (lockTimer) clearTimeout(lockTimer);
-      if (user && hasSessionKey()) {
+      if (user && hasSessionKey() && !locked) {
         lockTimer = setTimeout(() => {
           clearSessionKey();
           setLocked(true);
@@ -48,28 +47,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }, LOCK_TIMEOUT);
       }
     };
-
     const events = ['mousedown', 'keydown', 'touchstart', 'scroll'];
     events.forEach((e) => window.addEventListener(e, resetLockTimer, { passive: true }));
     resetLockTimer();
-
     return () => {
       if (lockTimer) clearTimeout(lockTimer);
       events.forEach((e) => window.removeEventListener(e, resetLockTimer));
     };
-  }, [user]);
+  }, [user, locked]);
 
   useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, sess) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
       (async () => {
         setSession(sess);
         setUser(sess?.user ?? null);
+        clearSessionKey();
         if (sess?.user) {
           await loadProfile(sess.user.id);
-          const wasLocked = sessionStorage.getItem(LOCK_KEY) === '1';
-          if (wasLocked) setLocked(true);
+          setLocked(true);
+          sessionStorage.setItem(LOCK_KEY, '1');
         } else {
           setProfile(null);
           setLocked(false);
@@ -83,15 +79,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (async () => {
         setSession(sess);
         setUser(sess?.user ?? null);
+        clearSessionKey();
         if (sess?.user) {
           await loadProfile(sess.user.id);
-          const wasLocked = sessionStorage.getItem(LOCK_KEY) === '1';
-          if (wasLocked) setLocked(true);
+          setLocked(true);
+          sessionStorage.setItem(LOCK_KEY, '1');
         }
         setLoading(false);
       })();
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
@@ -118,11 +114,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.setItem(LOCK_KEY, '1');
   };
 
-  const unlock = (masterPassword: string) => {
-    setSessionKey(masterPassword);
-    setLocked(false);
-    sessionStorage.removeItem(LOCK_KEY);
-    return { error: null };
+  const unlock = async (masterPassword: string) => {
+    if (!masterPassword) return { error: 'Master password is required.' };
+    if (!user) return { error: 'You must be signed in.' };
+    try {
+      const { data: verifier, error: verifierError } = await supabase
+        .from('vault_verifiers').select('verifier_encrypted').eq('user_id', user.id).maybeSingle();
+      if (verifierError) return { error: 'Unable to verify vault password. Please try again.' };
+
+      if (verifier?.verifier_encrypted) {
+        setSessionKey(masterPassword);
+        try {
+          await decryptWithSession(verifier.verifier_encrypted);
+        } catch {
+          clearSessionKey();
+          return { error: 'Incorrect master password.' };
+        }
+      } else {
+        setSessionKey(masterPassword);
+        const verifierEncrypted = await encryptWithSession(VERIFIER_MARKER);
+        const { error: insertError } = await supabase.from('vault_verifiers').insert({
+          user_id: user.id,
+          verifier_encrypted: verifierEncrypted,
+        });
+        if (insertError && insertError.code !== '23505') {
+          clearSessionKey();
+          return { error: 'Unable to initialize vault security. Please try again.' };
+        }
+        if (insertError?.code === '23505') {
+          const { data: existing } = await supabase.from('vault_verifiers')
+            .select('verifier_encrypted').eq('user_id', user.id).maybeSingle();
+          if (!existing?.verifier_encrypted) {
+            clearSessionKey();
+            return { error: 'Unable to initialize vault security. Please try again.' };
+          }
+          try {
+            await decryptWithSession(existing.verifier_encrypted);
+          } catch {
+            clearSessionKey();
+            return { error: 'Incorrect master password.' };
+          }
+        }
+      }
+      setLocked(false);
+      sessionStorage.removeItem(LOCK_KEY);
+      return { error: null };
+    } catch {
+      clearSessionKey();
+      return { error: 'Unable to unlock vault. Please try again.' };
+    }
   };
 
   const refreshProfile = async () => {
@@ -130,9 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider
-      value={{ user, session, profile, loading, locked, signUp, signIn, signOut, lock, unlock, refreshProfile }}
-    >
+    <AuthContext.Provider value={{ user, session, profile, loading, locked, signUp, signIn, signOut, lock, unlock, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
