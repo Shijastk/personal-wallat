@@ -131,7 +131,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return { error: 'Incorrect master password.' };
         }
       } else {
+        // Legacy compatibility: never create a verifier from an arbitrary password
+        // when encrypted vault data already exists. First validate against ciphertext.
+        const [cardsRes, credentialsRes, notesRes] = await Promise.all([
+          supabase.from('cards').select('number_encrypted, cvv_encrypted').is('deleted_at', null).limit(1),
+          supabase.from('credentials').select('password_encrypted, totp_secret_encrypted, recovery_info_encrypted').is('deleted_at', null).limit(1),
+          supabase.from('secure_notes').select('content_encrypted').is('deleted_at', null).limit(1),
+        ]);
+        if (cardsRes.error || credentialsRes.error || notesRes.error) {
+          return { error: 'Unable to verify existing vault data. Please try again.' };
+        }
+
+        const legacyCipher =
+          cardsRes.data?.[0]?.number_encrypted ||
+          cardsRes.data?.[0]?.cvv_encrypted ||
+          credentialsRes.data?.[0]?.password_encrypted ||
+          credentialsRes.data?.[0]?.totp_secret_encrypted ||
+          credentialsRes.data?.[0]?.recovery_info_encrypted ||
+          notesRes.data?.[0]?.content_encrypted;
+
         setSessionKey(masterPassword);
+        if (legacyCipher) {
+          try {
+            await decryptWithSession(legacyCipher);
+          } catch {
+            clearSessionKey();
+            return { error: 'Incorrect master password.' };
+          }
+        }
+
+        // Only a verified legacy password, or a first unlock of an empty vault,
+        // may establish the verifier.
         const verifierEncrypted = await encryptWithSession(VERIFIER_MARKER);
         const { error: insertError } = await supabase.from('vault_verifiers').insert({
           user_id: user.id,
