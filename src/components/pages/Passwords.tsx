@@ -66,9 +66,17 @@ export function Passwords() {
     setShowModal(true);
   };
 
-  const openEdit = (c: any) => {
+  const openEdit = async (c: any) => {
     setEditing(c);
-    setForm({ service: c.service as string ?? '', username: c.username as string ?? '', url: c.url as string ?? '', password: '', notes: c.notes as string ?? '' });
+    let decryptedPassword = '';
+    if (c.password_encrypted) {
+      try {
+        decryptedPassword = await decryptWithSession(c.password_encrypted as string);
+      } catch (err) {
+        console.error("Failed to decrypt password", err);
+      }
+    }
+    setForm({ service: c.service as string ?? '', username: c.username as string ?? '', url: c.url as string ?? '', password: decryptedPassword, notes: c.notes as string ?? '' });
     setShowPassword(false);
     setShowModal(true);
   };
@@ -84,13 +92,15 @@ export function Passwords() {
         updates.password_encrypted = await encryptWithSession(form.password);
         updates.strength_score = strength.score;
       }
-      await supabase.from('credentials').update(updates).eq('id', editing.id as string);
+      const { error } = await supabase.from('credentials').update(updates).eq('id', editing.id as string);
+      if (error) { alert('Failed to save password: ' + error.message); return; }
     } else {
       const encrypted = await encryptWithSession(form.password);
-      await supabase.from('credentials').insert({
+      const { error } = await supabase.from('credentials').insert({
         service: form.service, username: form.username, url: form.url,
         password_encrypted: encrypted, notes: form.notes, strength_score: strength.score,
       });
+      if (error) { alert('Failed to add password: ' + error.message); return; }
       await supabase.from('activity_logs').insert({ action: 'Password added', item_type: 'credential', details: form.service });
     }
     setShowModal(false);
@@ -98,13 +108,18 @@ export function Passwords() {
   };
 
   const toggleFav = async (c: any) => {
-    await supabase.from('credentials').update({ favorite: !(c.favorite as boolean) }).eq('id', c.id as string);
-    load();
+    setCreds(creds.map(cred => cred.id === c.id ? { ...cred, favorite: !c.favorite } : cred));
+    const { error } = await supabase.from('credentials').update({ favorite: !(c.favorite as boolean) }).eq('id', c.id as string);
+    if (error) { 
+      alert('Failed to update favorite status'); 
+      setCreds(creds);
+    }
   };
 
   const remove = async (c: any) => {
     if (!confirm('Delete this credential?')) return;
-    await supabase.from('credentials').update({ deleted_at: new Date().toISOString() }).eq('id', c.id as string);
+    const { error } = await supabase.from('credentials').update({ deleted_at: new Date().toISOString() }).eq('id', c.id as string);
+    if (error) { alert('Failed to delete password: ' + error.message); return; }
     load();
   };
 
@@ -123,12 +138,26 @@ export function Passwords() {
   };
 
   const copyPassword = async (c: any, text?: string) => {
-    const value = text ?? revealed[c.id as string];
+    let value = text ?? revealed[c.id as string];
+    if (!value && c.password_encrypted) {
+      try {
+        value = await decryptWithSession(c.password_encrypted as string);
+      } catch (err) {
+        console.error("Failed to decrypt for copy", err);
+        return;
+      }
+    }
     if (!value) return;
-    await navigator.clipboard.writeText(value);
-    setCopiedId(c.id as string);
-    setTimeout(() => setCopiedId(null), 2000);
-    await supabase.from('activity_logs').insert({ action: 'Password copied', item_type: 'credential', details: c.service as string, sensitive: true });
+    
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedId(c.id as string);
+      setTimeout(() => setCopiedId(null), 2000);
+      await supabase.from('activity_logs').insert({ action: 'Password copied', item_type: 'credential', details: c.service as string, sensitive: true });
+    } catch (err) {
+      console.error("Clipboard copy failed", err);
+      alert("Failed to copy to clipboard. Ensure you have clipboard permissions.");
+    }
   };
 
   const generate = () => {

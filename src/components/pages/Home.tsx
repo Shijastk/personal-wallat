@@ -21,10 +21,9 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { cn, getGreeting, formatRelative, daysUntil } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/Feedback';
-import type { Route } from '@/components/Layout';
+import { useNavigate } from 'react-router-dom';
 
 interface HomeProps {
-  onNavigate: (route: Route) => void;
   onQuickAdd: () => void;
   onSearch: () => void;
 }
@@ -45,7 +44,7 @@ interface RecentItem {
   subtitle: string;
   type: string;
   updated_at: string;
-  route: Route;
+  path: string;
 }
 
 interface ExpiringItem {
@@ -53,18 +52,18 @@ interface ExpiringItem {
   title: string;
   expiry_date: string;
   type: string;
-  route: Route;
+  path: string;
 }
 
-const categories: { label: string; icon: React.ReactNode; route: Route; color: string; bg: string }[] = [
-  { label: 'Documents', icon: <FolderClosed className="h-5 w-5" />, route: 'documents', color: 'text-brand-600', bg: 'bg-brand-50 dark:bg-brand-950/50' },
-  { label: 'Certificates', icon: <Award className="h-5 w-5" />, route: 'certificates', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/50' },
-  { label: 'Projects', icon: <Briefcase className="h-5 w-5" />, route: 'projects', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/50' },
-  { label: 'Resumes', icon: <FileText className="h-5 w-5" />, route: 'resumes', color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-950/50' },
-  { label: 'Passwords', icon: <KeyRound className="h-5 w-5" />, route: 'passwords', color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/50' },
-  { label: 'Cards', icon: <CreditCard className="h-5 w-5" />, route: 'cards', color: 'text-sky-600', bg: 'bg-sky-50 dark:bg-sky-950/50' },
-  { label: 'Notes', icon: <StickyNote className="h-5 w-5" />, route: 'notes', color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-950/50' },
-  { label: 'Profile', icon: <User className="h-5 w-5" />, route: 'profile', color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-950/50' },
+const categories: { label: string; icon: React.ReactNode; path: string; color: string; bg: string }[] = [
+  { label: 'Documents', icon: <FolderClosed className="h-5 w-5" />, path: '/documents', color: 'text-brand-600', bg: 'bg-brand-50 dark:bg-brand-950/50' },
+  { label: 'Certificates', icon: <Award className="h-5 w-5" />, path: '/certificates', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/50' },
+  { label: 'Projects', icon: <Briefcase className="h-5 w-5" />, path: '/projects', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/50' },
+  { label: 'Resumes', icon: <FileText className="h-5 w-5" />, path: '/resumes', color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-950/50' },
+  { label: 'Passwords', icon: <KeyRound className="h-5 w-5" />, path: '/passwords', color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/50' },
+  { label: 'Cards', icon: <CreditCard className="h-5 w-5" />, path: '/cards', color: 'text-sky-600', bg: 'bg-sky-50 dark:bg-sky-950/50' },
+  { label: 'Notes', icon: <StickyNote className="h-5 w-5" />, path: '/notes', color: 'text-orange-600', bg: 'bg-orange-50 dark:bg-orange-950/50' },
+  { label: 'Profile', icon: <User className="h-5 w-5" />, path: '/profile', color: 'text-purple-600', bg: 'bg-purple-50 dark:bg-purple-950/50' },
 ];
 
 const quickActions: { label: string; icon: React.ReactNode; onClick: () => void; bg: string }[] = [
@@ -76,8 +75,9 @@ const quickActions: { label: string; icon: React.ReactNode; onClick: () => void;
   { label: 'Profile', icon: <Plus className="h-5 w-5" />, onClick: () => {}, bg: 'bg-purple-600' },
 ];
 
-export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
+export function Home({ onQuickAdd, onSearch }: HomeProps) {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [counts, setCounts] = useState<Counts | null>(null);
   const [recent, setRecent] = useState<RecentItem[]>([]);
   const [expiring, setExpiring] = useState<ExpiringItem[]>([]);
@@ -131,10 +131,10 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
         .limit(5);
 
       const allRecent: RecentItem[] = [
-        ...(recentFiles.data ?? []).map((f: any) => ({ id: f.id as string, title: f.name as string, subtitle: (f.category as string) || 'Document', type: 'file', updated_at: f.updated_at as string, route: 'documents' as Route })),
-        ...(recentCerts.data ?? []).map((c: any) => ({ id: c.id as string, title: c.title as string, subtitle: c.issuing_organization as string, type: 'certificate', updated_at: c.updated_at as string, route: 'certificates' as Route })),
-        ...(recentProjects.data ?? []).map((p: any) => ({ id: p.id as string, title: p.name as string, subtitle: p.description as string, type: 'project', updated_at: p.updated_at as string, route: 'projects' as Route })),
-        ...(recentResumes.data ?? []).map((r: any) => ({ id: r.id as string, title: r.name as string, subtitle: r.target_role as string, type: 'resume', updated_at: r.updated_at as string, route: 'resumes' as Route })),
+        ...(recentFiles.data ?? []).map((f: any) => ({ id: f.id as string, title: f.name as string, subtitle: (f.category as string) || 'Document', type: 'file', updated_at: f.updated_at as string, path: '/documents' })),
+        ...(recentCerts.data ?? []).map((c: any) => ({ id: c.id as string, title: c.title as string, subtitle: c.issuing_organization as string, type: 'certificate', updated_at: c.updated_at as string, path: '/certificates' })),
+        ...(recentProjects.data ?? []).map((p: any) => ({ id: p.id as string, title: p.name as string, subtitle: p.description as string, type: 'project', updated_at: p.updated_at as string, path: '/projects' })),
+        ...(recentResumes.data ?? []).map((r: any) => ({ id: r.id as string, title: r.name as string, subtitle: r.target_role as string, type: 'resume', updated_at: r.updated_at as string, path: '/resumes' })),
       ].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5);
 
       setRecent(allRecent);
@@ -157,7 +157,7 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
           title: c.title as string,
           expiry_date: c.expiry_date as string,
           type: 'certificate',
-          route: 'certificates' as Route,
+          path: '/certificates',
         }));
 
       setExpiring(expiringItems);
@@ -198,12 +198,12 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
             <button
               key={action.label}
               onClick={() => {
-                if (action.label === 'Upload') onNavigate('documents');
-                else if (action.label === 'Scan') onNavigate('documents');
-                else if (action.label === 'Password') onNavigate('passwords');
-                else if (action.label === 'Certificate') onNavigate('certificates');
-                else if (action.label === 'Project') onNavigate('projects');
-                else if (action.label === 'Profile') onNavigate('profile');
+                if (action.label === 'Upload') navigate('/documents');
+                else if (action.label === 'Scan') navigate('/documents');
+                else if (action.label === 'Password') navigate('/passwords');
+                else if (action.label === 'Certificate') navigate('/certificates');
+                else if (action.label === 'Project') navigate('/projects');
+                else if (action.label === 'Profile') navigate('/profile');
               }}
               className="flex flex-col items-center gap-2 p-4 rounded-2xl card hover:shadow-md transition group"
             >
@@ -228,14 +228,14 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
-              { label: 'Documents', count: counts?.files ?? 0, icon: <FolderClosed className="h-5 w-5" />, route: 'documents' as Route, color: 'text-brand-600', bg: 'bg-brand-50 dark:bg-brand-950/50' },
-              { label: 'Certificates', count: counts?.certificates ?? 0, icon: <Award className="h-5 w-5" />, route: 'certificates' as Route, color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/50' },
-              { label: 'Projects', count: counts?.projects ?? 0, icon: <Briefcase className="h-5 w-5" />, route: 'projects' as Route, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/50' },
-              { label: 'Resumes', count: counts?.resumes ?? 0, icon: <FileText className="h-5 w-5" />, route: 'resumes' as Route, color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-950/50' },
+              { label: 'Documents', count: counts?.files ?? 0, icon: <FolderClosed className="h-5 w-5" />, path: '/documents', color: 'text-brand-600', bg: 'bg-brand-50 dark:bg-brand-950/50' },
+              { label: 'Certificates', count: counts?.certificates ?? 0, icon: <Award className="h-5 w-5" />, path: '/certificates', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/50' },
+              { label: 'Projects', count: counts?.projects ?? 0, icon: <Briefcase className="h-5 w-5" />, path: '/projects', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/50' },
+              { label: 'Resumes', count: counts?.resumes ?? 0, icon: <FileText className="h-5 w-5" />, path: '/resumes', color: 'text-violet-600', bg: 'bg-violet-50 dark:bg-violet-950/50' },
             ].map((item) => (
               <button
                 key={item.label}
-                onClick={() => onNavigate(item.route)}
+                onClick={() => navigate(item.path)}
                 className="flex flex-col items-start gap-3 p-4 rounded-2xl card hover:shadow-md transition text-left"
               >
                 <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl', item.bg, item.color)}>
@@ -258,7 +258,7 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
           {categories.map((cat) => (
             <button
               key={cat.label}
-              onClick={() => onNavigate(cat.route)}
+              onClick={() => navigate(cat.path)}
               className="flex items-center gap-3 p-3.5 rounded-2xl card hover:shadow-md transition group"
             >
               <span className={cn('flex h-10 w-10 items-center justify-center rounded-xl group-hover:scale-110 transition', cat.bg, cat.color)}>
@@ -276,7 +276,7 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
           <h2 className="text-sm font-semibold text-ink-500 dark:text-ink-400 uppercase tracking-wide flex items-center gap-2">
             <Clock className="h-4 w-4" /> Recent
           </h2>
-          <button onClick={() => onNavigate('documents')} className="text-sm text-brand-600 hover:text-brand-700 flex items-center gap-1">
+          <button onClick={() => navigate('/documents')} className="text-sm text-brand-600 hover:text-brand-700 flex items-center gap-1">
             View all <ChevronRight className="h-4 w-4" />
           </button>
         </div>
@@ -296,7 +296,7 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
             {recent.map((item) => (
               <button
                 key={`${item.type}-${item.id}`}
-                onClick={() => onNavigate(item.route)}
+                onClick={() => navigate(item.path)}
                 className="flex items-center gap-3 w-full p-4 rounded-2xl card hover:shadow-md transition text-left"
               >
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-ink-100 dark:bg-ink-800 text-ink-500">
@@ -328,7 +328,7 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
               return (
                 <button
                   key={item.id}
-                  onClick={() => onNavigate(item.route)}
+                  onClick={() => navigate(item.path)}
                   className="flex items-center gap-3 w-full p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 hover:shadow-md transition text-left"
                 >
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-600">
@@ -350,7 +350,7 @@ export function Home({ onNavigate, onQuickAdd, onSearch }: HomeProps) {
 
       {/* Security banner */}
       <button
-        onClick={() => onNavigate('security')}
+        onClick={() => navigate('/security')}
         className="w-full flex items-center gap-4 p-5 rounded-2xl bg-gradient-to-r from-brand-600 to-brand-700 text-white shadow-lg shadow-brand-600/20 hover:shadow-xl transition"
       >
         <Shield className="h-8 w-8" />

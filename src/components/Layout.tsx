@@ -19,59 +19,44 @@ import {
   Lock,
   ChevronLeft,
 } from 'lucide-react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 
-export type Route =
-  | 'home'
-  | 'vault'
-  | 'search'
-  | 'profile'
-  | 'documents'
-  | 'certificates'
-  | 'projects'
-  | 'resumes'
-  | 'passwords'
-  | 'cards'
-  | 'notes'
-  | 'security'
-  | 'activity'
-  | 'settings';
-
 interface LayoutProps {
-  route: Route;
-  onNavigate: (route: Route) => void;
   children: ReactNode;
   onQuickAdd: () => void;
   onSearch: () => void;
 }
 
-const navItems: { route: Route; label: string; icon: ReactNode }[] = [
-  { route: 'home', label: 'Home', icon: <Home className="h-5 w-5" /> },
-  { route: 'vault', label: 'Vault', icon: <FolderClosed className="h-5 w-5" /> },
-  { route: 'search', label: 'Search', icon: <Search className="h-5 w-5" /> },
-  { route: 'profile', label: 'Profile', icon: <User className="h-5 w-5" /> },
+const navItems: { path: string; label: string; icon: ReactNode }[] = [
+  { path: '/', label: 'Home', icon: <Home className="h-5 w-5" /> },
+  { path: '/documents', label: 'Vault', icon: <FolderClosed className="h-5 w-5" /> },
+  { path: '/search', label: 'Search', icon: <Search className="h-5 w-5" /> },
+  { path: '/profile', label: 'Profile', icon: <User className="h-5 w-5" /> },
 ];
 
-const sidebarItems: { route: Route; label: string; icon: ReactNode }[] = [
-  { route: 'home', label: 'Home', icon: <Home className="h-5 w-5" /> },
-  { route: 'vault', label: 'Documents', icon: <FolderClosed className="h-5 w-5" /> },
-  { route: 'certificates', label: 'Certificates', icon: <Award className="h-5 w-5" /> },
-  { route: 'projects', label: 'Projects', icon: <Briefcase className="h-5 w-5" /> },
-  { route: 'resumes', label: 'Resumes', icon: <FileText className="h-5 w-5" /> },
-  { route: 'passwords', label: 'Passwords', icon: <KeyRound className="h-5 w-5" /> },
-  { route: 'cards', label: 'Cards', icon: <CreditCard className="h-5 w-5" /> },
-  { route: 'notes', label: 'Secure Notes', icon: <StickyNote className="h-5 w-5" /> },
+const sidebarItems: { path: string; label: string; icon: ReactNode }[] = [
+  { path: '/', label: 'Home', icon: <Home className="h-5 w-5" /> },
+  { path: '/documents', label: 'Documents', icon: <FolderClosed className="h-5 w-5" /> },
+  { path: '/certificates', label: 'Certificates', icon: <Award className="h-5 w-5" /> },
+  { path: '/projects', label: 'Projects', icon: <Briefcase className="h-5 w-5" /> },
+  { path: '/resumes', label: 'Resumes', icon: <FileText className="h-5 w-5" /> },
+  { path: '/passwords', label: 'Passwords', icon: <KeyRound className="h-5 w-5" /> },
+  { path: '/cards', label: 'Cards', icon: <CreditCard className="h-5 w-5" /> },
+  { path: '/notes', label: 'Secure Notes', icon: <StickyNote className="h-5 w-5" /> },
 ];
 
-const sidebarFooter: { route: Route; label: string; icon: ReactNode }[] = [
-  { route: 'security', label: 'Security', icon: <Shield className="h-5 w-5" /> },
-  { route: 'activity', label: 'Activity', icon: <FileText className="h-5 w-5" /> },
-  { route: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" /> },
+const sidebarFooter: { path: string; label: string; icon: ReactNode }[] = [
+  { path: '/security', label: 'Security', icon: <Shield className="h-5 w-5" /> },
+  { path: '/activity', label: 'Activity', icon: <FileText className="h-5 w-5" /> },
+  { path: '/settings', label: 'Settings', icon: <Settings className="h-5 w-5" /> },
 ];
 
-export function Layout({ route, onNavigate, children, onQuickAdd, onSearch }: LayoutProps) {
+export function Layout({ children, onQuickAdd, onSearch }: LayoutProps) {
   const { profile, lock, signOut } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [dark, setDark] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -108,11 +93,11 @@ export function Layout({ route, onNavigate, children, onQuickAdd, onSearch }: La
         <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
           {sidebarItems.map((item) => (
             <button
-              key={item.route}
-              onClick={() => onNavigate(item.route)}
+              key={item.path}
+              onClick={() => navigate(item.path)}
               className={cn(
                 'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition',
-                route === item.route
+                location.pathname === item.path
                   ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
                   : 'text-ink-600 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-800'
               )}
@@ -126,11 +111,11 @@ export function Layout({ route, onNavigate, children, onQuickAdd, onSearch }: La
           </div>
           {sidebarFooter.map((item) => (
             <button
-              key={item.route}
-              onClick={() => onNavigate(item.route)}
+              key={item.path}
+              onClick={() => navigate(item.path)}
               className={cn(
                 'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition',
-                route === item.route
+                location.pathname === item.path
                   ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
                   : 'text-ink-600 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-800'
               )}
@@ -184,11 +169,11 @@ export function Layout({ route, onNavigate, children, onQuickAdd, onSearch }: La
             <nav className="flex-1 overflow-y-auto px-3 py-2 space-y-0.5">
               {[...sidebarItems, ...sidebarFooter].map((item) => (
                 <button
-                  key={item.route}
-                  onClick={() => { onNavigate(item.route); setSidebarOpen(false); }}
+                  key={item.path}
+                  onClick={() => { navigate(item.path); setSidebarOpen(false); }}
                   className={cn(
                     'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition',
-                    route === item.route
+                    location.pathname === item.path
                       ? 'bg-brand-50 dark:bg-brand-950/50 text-brand-700 dark:text-brand-300'
                       : 'text-ink-600 dark:text-ink-300 hover:bg-ink-100 dark:hover:bg-ink-800'
                   )}
@@ -242,7 +227,7 @@ export function Layout({ route, onNavigate, children, onQuickAdd, onSearch }: La
                 {dark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
               <button
-                onClick={() => onNavigate('profile')}
+                onClick={() => navigate('/profile')}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-600 text-white text-sm font-semibold"
               >
                 {(profile?.full_name || 'U').charAt(0).toUpperCase()}
@@ -262,11 +247,11 @@ export function Layout({ route, onNavigate, children, onQuickAdd, onSearch }: La
         <div className="flex items-center justify-around px-2 py-2 pb-safe">
           {navItems.map((item) => (
             <button
-              key={item.route}
-              onClick={() => onNavigate(item.route)}
+              key={item.path}
+              onClick={() => navigate(item.path)}
               className={cn(
                 'flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition',
-                route === item.route
+                location.pathname === item.path
                   ? 'text-brand-600'
                   : 'text-ink-400 dark:text-ink-500'
               )}

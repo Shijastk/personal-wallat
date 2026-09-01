@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { BrowserRouter, Routes, Route as RouterRoute, Navigate, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/lib/auth';
-import { Layout, type Route } from '@/components/Layout';
+import { Layout } from '@/components/Layout';
 import { AuthScreen } from '@/components/auth/AuthScreen';
 import { LockScreen } from '@/components/auth/LockScreen';
 import { Home } from '@/components/pages/Home';
@@ -21,7 +22,7 @@ import { Loader2 } from 'lucide-react';
 
 function VaultApp() {
   const { user, loading, locked } = useAuth();
-  const [route, setRoute] = useState<Route>('home');
+  const navigate = useNavigate();
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [dark, setDark] = useState(false);
@@ -78,62 +79,40 @@ function VaultApp() {
     return <LockScreen />;
   }
 
-  const renderPage = () => {
-    switch (route) {
-      case 'home':
-        return <Home onNavigate={setRoute} onQuickAdd={() => setQuickAddOpen(true)} onSearch={() => setSearchOpen(true)} />;
-      case 'vault':
-      case 'documents':
-        return <Documents onQuickAdd={() => setQuickAddOpen(true)} />;
-      case 'certificates':
-        return <Certificates />;
-      case 'projects':
-        return <Projects />;
-      case 'resumes':
-        return <Resumes />;
-      case 'passwords':
-        return <Passwords />;
-      case 'cards':
-        return <Cards />;
-      case 'notes':
-        return <Notes />;
-      case 'profile':
-        return <Profile />;
-      case 'security':
-        return <Security />;
-      case 'activity':
-        return <ActivityPage />;
-      case 'settings':
-        return <SettingsPage dark={dark} toggleDark={toggleDark} />;
-      case 'search':
-        return <Home onNavigate={setRoute} onQuickAdd={() => setQuickAddOpen(true)} onSearch={() => setSearchOpen(true)} />;
-      default:
-        return <Home onNavigate={setRoute} onQuickAdd={() => setQuickAddOpen(true)} onSearch={() => setSearchOpen(true)} />;
-    }
-  };
-
   return (
     <>
       <Layout
-        route={route}
-        onNavigate={setRoute}
         onQuickAdd={() => setQuickAddOpen(true)}
         onSearch={() => setSearchOpen(true)}
       >
-        {renderPage()}
+        <Routes>
+          <RouterRoute path="/" element={<Home onQuickAdd={() => setQuickAddOpen(true)} onSearch={() => setSearchOpen(true)} />} />
+          <RouterRoute path="/documents" element={<Documents onQuickAdd={() => setQuickAddOpen(true)} />} />
+          <RouterRoute path="/vault" element={<Navigate to="/documents" replace />} />
+          <RouterRoute path="/certificates" element={<Certificates />} />
+          <RouterRoute path="/projects" element={<Projects />} />
+          <RouterRoute path="/resumes" element={<Resumes />} />
+          <RouterRoute path="/passwords" element={<Passwords />} />
+          <RouterRoute path="/cards" element={<Cards />} />
+          <RouterRoute path="/notes" element={<Notes />} />
+          <RouterRoute path="/profile" element={<Profile />} />
+          <RouterRoute path="/security" element={<Security />} />
+          <RouterRoute path="/activity" element={<ActivityPage />} />
+          <RouterRoute path="/settings" element={<SettingsPage dark={dark} toggleDark={toggleDark} />} />
+          <RouterRoute path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </Layout>
       <QuickAddModal
         open={quickAddOpen}
         onClose={() => setQuickAddOpen(false)}
-        onNavigate={setRoute}
-        onUpload={() => setRoute('documents')}
+        onUpload={() => navigate('/documents')}
       />
       <SearchPalette
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         onResultClick={(result) => {
           const r = routeForType[result.type];
-          if (r) setRoute(r as Route);
+          if (r) navigate(r);
         }}
       />
     </>
@@ -143,7 +122,9 @@ function VaultApp() {
 export default function App() {
   return (
     <AuthProvider>
-      <VaultApp />
+      <BrowserRouter>
+        <VaultApp />
+      </BrowserRouter>
     </AuthProvider>
   );
 }

@@ -78,9 +78,11 @@ export function Notes() {
     if (!form.title.trim()) return;
     const encrypted = await encryptWithSession(form.content);
     if (editing) {
-      await supabase.from('secure_notes').update({ title: form.title, content_encrypted: encrypted }).eq('id', editing.id as string);
+      const { error } = await supabase.from('secure_notes').update({ title: form.title, content_encrypted: encrypted }).eq('id', editing.id as string);
+      if (error) { alert('Failed to save note: ' + error.message); return; }
     } else {
-      await supabase.from('secure_notes').insert({ title: form.title, content_encrypted: encrypted });
+      const { error } = await supabase.from('secure_notes').insert({ title: form.title, content_encrypted: encrypted });
+      if (error) { alert('Failed to add note: ' + error.message); return; }
       await supabase.from('activity_logs').insert({ action: 'Secure note added', item_type: 'note', details: form.title });
     }
     setShowModal(false);
@@ -88,13 +90,18 @@ export function Notes() {
   };
 
   const toggleFav = async (n: any) => {
-    await supabase.from('secure_notes').update({ favorite: !(n.favorite as boolean) }).eq('id', n.id as string);
-    load();
+    setNotes(notes.map(note => note.id === n.id ? { ...note, favorite: !n.favorite } : note));
+    const { error } = await supabase.from('secure_notes').update({ favorite: !(n.favorite as boolean) }).eq('id', n.id as string);
+    if (error) { 
+      alert('Failed to update favorite status'); 
+      setNotes(notes);
+    }
   };
 
   const remove = async (n: any) => {
     if (!confirm('Delete this note?')) return;
-    await supabase.from('secure_notes').update({ deleted_at: new Date().toISOString() }).eq('id', n.id as string);
+    const { error } = await supabase.from('secure_notes').update({ deleted_at: new Date().toISOString() }).eq('id', n.id as string);
+    if (error) { alert('Failed to delete note: ' + error.message); return; }
     load();
   };
 

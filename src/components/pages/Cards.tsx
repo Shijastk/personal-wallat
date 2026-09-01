@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { cn, maskCardNumber } from '@/lib/utils';
 import { hasSessionKey, encryptWithSession, decryptWithSession } from '@/lib/crypto';
+import { compressImageForAI } from '@/utils/imageCompression';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
@@ -90,124 +91,50 @@ export function Cards() {
 
     setIsScanning(true);
     try {
-      const Tesseract = (await import('tesseract.js')).default;
-      const result = await Tesseract.recognize(file, 'eng');
-      const text = result.data.text;
+      // Compress image client-side to save tokens and bandwidth
+      const base64Image = await compressImageForAI(file);
       
-      // Parse PAN (Luhn validated)
-      let pan = '';
-      let rawPanToken = '';
-      const panRegex = /(?:\d[ -]*?){13,19}/g;
-      const matches = text.match(panRegex) || [];
-      for (const match of matches) {
-        const clean = match.replace(/\D/g, '');
-        if (clean.length >= 13 && clean.length <= 19) {
-          // Luhn check
-          let s = 0;
-          let doubleDigit = false;
-          for (let i = clean.length - 1; i >= 0; i--) {
-            let digit = parseInt(clean.charAt(i));
-            if (doubleDigit) {
-              digit *= 2;
-              if (digit > 9) digit -= 9;
-            }
-            s += digit;
-            doubleDigit = !doubleDigit;
-          }
-          if (s % 10 === 0) {
-            pan = clean;
-            rawPanToken = match;
-            break;
-          }
-        }
+      // Call Supabase Edge Function
+      const { data, error } = await supabase.functions.invoke('extract-document-data', {
+        body: { imageBase64: base64Image, documentType: 'card' }
+      });
+
+      if (error) {
+        console.error("Supabase Edge Function Error Details:", error);
+        throw new Error(error.message || 'Edge function error');
+      }
+      if (!data?.success) {
+        console.error("AI Extraction failed but no HTTP error:", data);
+        throw new Error(data?.error || 'Failed to extract data');
       }
 
-      // Expiry Date (MM/YY)
-      const expiryRegex = /(0[1-9]|1[0-2])[\/\-]([2-9]\d)/;
-      const expiryMatch = text.match(expiryRegex);
-      let expiry = expiryMatch ? `${expiryMatch[1]}/${expiryMatch[2]}` : '';
-
-      // CVV heuristics
-      let cvv = '';
-      const cvvRegex = /\b\d{3,4}\b/g;
-      const cvvMatches = text.match(cvvRegex) || [];
-      let highConfidenceCvv = '';
-      let candidateCvv = '';
+      const extracted = data.data;
       
-      for (const c of cvvMatches) {
-        if (pan && pan.endsWith(c)) continue; // Must not be PAN last 3 or 4 digits
-        if (c.match(/^(0[1-9]|1[0-2])[0-9]{2}$/)) continue; // Looks like MMYY date
-        
-        // Context hint (if it's near CVV, CVC, CID text)
-        const contextRegex = new RegExp(`(?:cvv|cvc|cid|security code)[\\s\\S]{0,20}?${c}`, 'is');
-        if (contextRegex.test(text)) {
-          highConfidenceCvv = c;
-          break; 
-        } else if (!candidateCvv) {
-           candidateCvv = c;
-        }
-      }
+      const parseString = (val: any) => (val && val !== "null" && val !== "undefined" ? String(val).trim() : "");
       
-      // Strict fallback: only use candidate if there are very few numbers on the card (e.g. back of card scan)
-      if (highConfidenceCvv) {
-        cvv = highConfidenceCvv;
-      } else if (candidateCvv && cvvMatches.length <= 3 && !pan) {
-        // If we didn't see a PAN, and there are very few numbers, it's likely the back of the card.
-        cvv = candidateCvv;
-      } else {
-        cvv = ''; // Low confidence, leave blank
-      }
-
-      let bank = '';
-      let type = 'debit';
-      let network = '';
-      let foundTypeConfidently = false;
-
-      if (/credit/i.test(text)) { type = 'credit'; foundTypeConfidently = true; }
-      else if (/debit/i.test(text)) { type = 'debit'; foundTypeConfidently = true; }
-      
-      if (/visa/i.test(text)) network = 'Visa';
-      if (/mastercard/i.test(text)) network = 'Mastercard';
-      if (/amex|american express/i.test(text)) network = 'Amex';
-
-      // Fallback BIN Lookup (Only send first 8 digits)
-      if (pan && pan.length >= 8) {
-        try {
-          const bin = pan.substring(0, 8);
-          if (!bank || !network || !foundTypeConfidently) {
-            const res = await fetch(`https://data.handyapi.com/bin/${bin}`);
-            if (res.ok) {
-              const binData = await res.json();
-              if (binData.Status === 'SUCCESS') {
-                if (!bank && binData.Issuer) bank = binData.Issuer;
-                if (!network && binData.Scheme) network = binData.Scheme;
-                if (!foundTypeConfidently && binData.Type) type = binData.Type.toLowerCase() === 'credit' ? 'credit' : 'debit';
-              }
-            }
-          }
-        } catch (err) {
-           console.error("BIN lookup failed, proceeding with local OCR data", err);
-        }
-      }
+      const bank = parseString(extracted.bank);
+      const network = parseString(extracted.card_type);
+      const type = /credit/i.test(network) ? 'credit' : 'debit';
+      const pan = parseString(extracted.card_number).replace(/\D/g, ''); // Ensure digits only
       
       setEditing(null);
       setForm({
         nickname: bank ? `${bank} ${network || 'Card'}`.trim() : (network || 'Card'),
         bank: bank,
-        cardholder_name: '', // High risk of false positive from raw text
+        cardholder_name: parseString(extracted.cardholder_name),
         card_number: pan ? formatCardInput(pan) : '',
-        expiry_date: expiry,
+        expiry_date: parseString(extracted.expiry_date),
         card_type: type,
-        notes: 'Scanned via local OCR. Please review fields for accuracy.',
-        cvv: cvv,
+        notes: 'Scanned via AI OCR. Please review fields for accuracy.',
+        cvv: '', // CVV is intentionally not extracted by the schema
         removeCvv: false
       });
       setShowCvvInForm(false);
       setShowModal(true);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Error scanning card. Please enter manually.');
+      alert(`Error scanning card: ${err.message}. Please enter manually.`);
     } finally {
       setIsScanning(false);
       if (fileInputRef.current) {
@@ -216,12 +143,36 @@ export function Cards() {
     }
   };
 
-  const openEdit = (c: any) => {
+  const openEdit = async (c: any) => {
     setEditing(c);
+    
+    let decryptedNumber = '';
+    let decryptedCvv = '';
+    
+    if (c.number_encrypted) {
+      try {
+        decryptedNumber = await decryptWithSession(c.number_encrypted as string);
+      } catch (err) {
+        console.error("Failed to decrypt card number", err);
+      }
+    }
+    
+    if (c.cvv_encrypted) {
+      try {
+        decryptedCvv = await decryptWithSession(c.cvv_encrypted as string);
+      } catch (err) {
+        console.error("Failed to decrypt CVV", err);
+      }
+    }
+
     setForm({
       nickname: c.nickname as string ?? '', bank: c.bank as string ?? '', cardholder_name: c.cardholder_name as string ?? '',
-      card_number: '', expiry_date: c.expiry_date as string ?? '', card_type: c.card_type as string ?? 'debit', notes: c.notes as string ?? '',
-      cvv: '', removeCvv: false
+      card_number: decryptedNumber ? formatCardInput(decryptedNumber) : '', 
+      expiry_date: c.expiry_date as string ?? '', 
+      card_type: c.card_type as string ?? 'debit', 
+      notes: c.notes as string ?? '',
+      cvv: decryptedCvv, 
+      removeCvv: false
     });
     setShowCvvInForm(false);
     setShowModal(true);
@@ -250,15 +201,17 @@ export function Cards() {
       if (encryptedCvv !== undefined) {
         updates.cvv_encrypted = encryptedCvv;
       }
-      await supabase.from('cards').update(updates).eq('id', editing.id as string);
+      const { error } = await supabase.from('cards').update(updates).eq('id', editing.id as string);
+      if (error) { alert('Failed to save card: ' + error.message); return; }
     } else {
       const encrypted = form.card_number ? await encryptWithSession(form.card_number.replace(/\s/g, '')) : null;
-      await supabase.from('cards').insert({
+      const { error } = await supabase.from('cards').insert({
         nickname: form.nickname, bank: form.bank, cardholder_name: form.cardholder_name,
         last_four: lastFour || null, number_encrypted: encrypted, expiry_date: form.expiry_date,
         card_type: form.card_type, notes: form.notes,
         cvv_encrypted: encryptedCvv !== undefined ? encryptedCvv : null
       });
+      if (error) { alert('Failed to add card: ' + error.message); return; }
       await supabase.from('activity_logs').insert({ action: 'Card added', item_type: 'card', details: form.nickname });
     }
     setShowModal(false);
@@ -266,13 +219,18 @@ export function Cards() {
   };
 
   const toggleFav = async (c: any) => {
-    await supabase.from('cards').update({ favorite: !(c.favorite as boolean) }).eq('id', c.id as string);
-    load();
+    setCards(cards.map(card => card.id === c.id ? { ...card, favorite: !c.favorite } : card));
+    const { error } = await supabase.from('cards').update({ favorite: !(c.favorite as boolean) }).eq('id', c.id as string);
+    if (error) { 
+      alert('Failed to update favorite status'); 
+      setCards(cards); // revert
+    }
   };
 
   const remove = async (c: any) => {
     if (!confirm('Delete this card?')) return;
-    await supabase.from('cards').update({ deleted_at: new Date().toISOString() }).eq('id', c.id as string);
+    const { error } = await supabase.from('cards').update({ deleted_at: new Date().toISOString() }).eq('id', c.id as string);
+    if (error) { alert('Failed to delete card: ' + error.message); return; }
     load();
   };
 
@@ -354,7 +312,7 @@ export function Cards() {
             onChange={handleImageUpload} 
             className="hidden" 
           />
-          <Button size="sm" variant="outline" onClick={handleScanClick} disabled={isScanning}>
+          <Button size="sm" variant="secondary" onClick={handleScanClick} disabled={isScanning}>
             {isScanning ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Camera className="h-4 w-4 mr-1" />} 
             Scan Card
           </Button>
@@ -419,7 +377,7 @@ export function Cards() {
                       <span className="text-xs text-white/60 font-medium">CVV</span>
                       <button onClick={() => revealCvv(c)} className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-white/10 transition text-white/90">
                         {revealedCvv?.id === c.id ? (
-                          <span className="font-mono tracking-widest">{revealedCvv.value}</span>
+                          <span className="font-mono tracking-widest">{revealedCvv?.value}</span>
                         ) : (
                           <span className="font-mono tracking-widest">•••</span>
                         )}

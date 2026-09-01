@@ -273,14 +273,22 @@ export function Certificates() {
   const toggleFav = async (cert: any) => {
     // Optimistic update
     setCerts(certs.map(c => c.id === cert.id ? { ...c, favorite: !c.favorite } : c));
-    await supabase.from('certificates').update({ favorite: !(cert.favorite as boolean) }).eq('id', cert.id as string);
+    const { error } = await supabase.from('certificates').update({ favorite: !(cert.favorite as boolean) }).eq('id', cert.id as string);
+    if (error) {
+      alert('Failed to update favorite status');
+      setCerts(certs);
+    }
   };
 
   const remove = async (cert: any) => {
     if (!confirm('Delete this certificate?')) return;
     // Optimistic delete
     setCerts(certs.filter(c => c.id !== cert.id));
-    await supabase.from('certificates').update({ deleted_at: new Date().toISOString() }).eq('id', cert.id as string);
+    const { error } = await supabase.from('certificates').update({ deleted_at: new Date().toISOString() }).eq('id', cert.id as string);
+    if (error) {
+      alert('Failed to delete certificate: ' + error.message);
+      setCerts(certs);
+    }
   };
 
   return (

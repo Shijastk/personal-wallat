@@ -65,9 +65,11 @@ export function Projects() {
       technologies: form.technologies.split(',').map((t) => t.trim()).filter(Boolean),
     };
     if (editing) {
-      await supabase.from('projects').update(payload).eq('id', editing.id as string);
+      const { error } = await supabase.from('projects').update(payload).eq('id', editing.id as string);
+      if (error) { alert('Failed to update project: ' + error.message); return; }
     } else {
-      await supabase.from('projects').insert(payload);
+      const { error } = await supabase.from('projects').insert(payload);
+      if (error) { alert('Failed to add project: ' + error.message); return; }
       await supabase.from('activity_logs').insert({ action: 'Project added', item_type: 'project', details: form.name });
     }
     setShowModal(false);
@@ -75,8 +77,12 @@ export function Projects() {
   };
 
   const toggleFav = async (p: any) => {
-    await supabase.from('projects').update({ favorite: !(p.favorite as boolean) }).eq('id', p.id as string);
-    load();
+    setProjects(projects.map(proj => proj.id === p.id ? { ...proj, favorite: !p.favorite } : proj));
+    const { error } = await supabase.from('projects').update({ favorite: !(p.favorite as boolean) }).eq('id', p.id as string);
+    if (error) { 
+      alert('Failed to update favorite status'); 
+      setProjects(projects);
+    }
   };
 
   const remove = async (p: any) => {
@@ -85,23 +91,32 @@ export function Projects() {
     // 1. Find associated files
     const { data: files } = await supabase.from('files').select('id, storage_path, metadata').eq('project_id', p.id as string).is('deleted_at', null);
     
-    // 2. Remove files from storage
-    if (files && files.length > 0) {
-      const pathsToRemove: string[] = [];
-      files.forEach((f) => {
-        if (f.storage_path) pathsToRemove.push(f.storage_path);
-        if (f.metadata?.thumbnail_path) pathsToRemove.push(f.metadata.thumbnail_path);
-      });
-      if (pathsToRemove.length > 0) {
-        await supabase.storage.from(STORAGE_BUCKET).remove(pathsToRemove);
-      }
-      
-      // 3. Soft-delete files in DB
-      await supabase.from('files').update({ deleted_at: new Date().toISOString() }).eq('project_id', p.id as string);
+    // 2. Soft-delete project FIRST
+    const { error: projError } = await supabase.from('projects').update({ deleted_at: new Date().toISOString() }).eq('id', p.id as string);
+    if (projError) {
+      alert('Failed to delete project: ' + projError.message);
+      return;
     }
 
-    // 4. Soft-delete project
-    await supabase.from('projects').update({ deleted_at: new Date().toISOString() }).eq('id', p.id as string);
+    // 3. Soft-delete associated files
+    if (files && files.length > 0) {
+      const { error: filesError } = await supabase.from('files').update({ deleted_at: new Date().toISOString() }).eq('project_id', p.id as string);
+      
+      // 4. Storage cleanup ONLY if DB delete succeeded
+      if (!filesError) {
+        const pathsToRemove: string[] = [];
+        files.forEach((f) => {
+          if (f.storage_path) pathsToRemove.push(f.storage_path);
+          if (f.metadata?.thumbnail_path) pathsToRemove.push(f.metadata.thumbnail_path);
+        });
+        if (pathsToRemove.length > 0) {
+          await supabase.storage.from(STORAGE_BUCKET).remove(pathsToRemove);
+        }
+      } else {
+        alert('Failed to delete associated files: ' + filesError.message);
+      }
+    }
+
     load();
   };
 
@@ -188,7 +203,7 @@ export function Projects() {
       return;
     }
     
-    const { data: newRow } = await supabase.from('files').insert({
+    const { data: newRow, error } = await supabase.from('files').insert({
       user_id: user.id,
       project_id: activeProject.id,
       name: pendingFile.name,
@@ -200,6 +215,15 @@ export function Projects() {
       description: null,
       metadata: thumbnailPath ? { thumbnail_path: thumbnailPath } : {},
     }).select().single();
+
+    if (error) {
+      alert('Upload failed during database insertion: ' + error.message);
+      setUploading(false);
+      const pathsToRemove = [path];
+      if (thumbnailPath) pathsToRemove.push(thumbnailPath);
+      await supabase.storage.from(STORAGE_BUCKET).remove(pathsToRemove);
+      return;
+    }
 
     if (newRow) {
       setProjectFiles(prev => [newRow, ...prev]);
@@ -229,12 +253,20 @@ export function Projects() {
   const deleteFile = async (file: any) => {
     if (!confirm('Delete this file?')) return;
     setProjectFiles(projectFiles.filter(f => f.id !== file.id)); // Optimistic delete
+    
+    const { error } = await supabase.from('files').update({ deleted_at: new Date().toISOString() }).eq('id', file.id as string);
+    if (error) {
+      alert('Failed to delete file: ' + error.message);
+      setProjectFiles(projectFiles);
+      return;
+    }
+
     if (file.storage_path) {
       const pathsToRemove = [file.storage_path as string];
       if (file.metadata?.thumbnail_path) pathsToRemove.push(file.metadata.thumbnail_path);
       await supabase.storage.from(STORAGE_BUCKET).remove(pathsToRemove);
     }
-    await supabase.from('files').update({ deleted_at: new Date().toISOString() }).eq('id', file.id as string);
+    
     await supabase.from('activity_logs').insert({ action: 'Project file deleted', item_type: 'file', details: file.name as string });
   };
 
@@ -292,8 +324,8 @@ export function Projects() {
                 {p.github_url && <a href={p.github_url as string} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-ink-600 dark:text-ink-300 hover:underline"><Github className="h-4 w-4" /> Code</a>}
                 {p.project_url && <a href={p.project_url as string} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-sm text-ink-600 dark:text-ink-300 hover:underline"><ExternalLink className="h-4 w-4" /> Project</a>}
                 <div className="ml-auto flex items-center gap-1">
-                  <button onClick={() => openFiles(p)} className="p-2 rounded-lg hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-400 hover:text-ink-600 transition" title="Project Files">
-                    <Paperclip className="h-4 w-4" />
+                  <button onClick={() => openFiles(p)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-ink-50 hover:bg-ink-100 dark:bg-ink-800/50 dark:hover:bg-ink-800 text-ink-600 dark:text-ink-300 hover:text-brand-600 transition text-sm font-medium border border-ink-200 dark:border-ink-700/50 mr-1" title="Attach Files">
+                    <Paperclip className="h-4 w-4" /> Attach Files
                   </button>
                   <button onClick={() => openEdit(p)} className="p-2 rounded-lg hover:bg-ink-100 dark:hover:bg-ink-800 text-ink-400 hover:text-ink-600 transition">
                     <Briefcase className="h-4 w-4" />

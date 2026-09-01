@@ -32,14 +32,14 @@ const iconMap: Record<string, React.ReactNode> = {
 };
 
 const routeForType: Record<string, string> = {
-  file: 'documents',
-  certificate: 'certificates',
-  project: 'projects',
-  resume: 'resumes',
-  credential: 'passwords',
-  card: 'cards',
-  note: 'notes',
-  social: 'profile',
+  file: '/documents',
+  certificate: '/certificates',
+  project: '/projects',
+  resume: '/resumes',
+  credential: '/passwords',
+  card: '/cards',
+  note: '/notes',
+  social: '/profile',
 };
 
 export function SearchPalette({ open, onClose, onResultClick }: SearchPaletteProps) {

@@ -189,6 +189,15 @@ export function Documents({ onQuickAdd: _onQuickAdd }: DocumentsProps) {
       metadata: thumbnailPath ? { thumbnail_path: thumbnailPath } : {},
     }).select().single();
 
+    if (error) {
+      alert('Upload failed during database insertion: ' + error.message);
+      setUploading(false);
+      const pathsToRemove = [path];
+      if (thumbnailPath) pathsToRemove.push(thumbnailPath);
+      await supabase.storage.from(STORAGE_BUCKET).remove(pathsToRemove);
+      return;
+    }
+
     if (newRow) {
       setFiles(prev => [newRow, ...prev]);
     }
@@ -208,18 +217,30 @@ export function Documents({ onQuickAdd: _onQuickAdd }: DocumentsProps) {
   const toggleFavorite = async (file: any) => {
     const newFav = !file.favorite;
     setFiles(files.map(f => f.id === file.id ? { ...f, favorite: newFav } : f));
-    await supabase.from('files').update({ favorite: newFav }).eq('id', file.id as string);
+    const { error } = await supabase.from('files').update({ favorite: newFav }).eq('id', file.id as string);
+    if (error) {
+      alert('Failed to update favorite status');
+      setFiles(files);
+    }
   };
 
   const deleteFile = async (file: any) => {
     if (!confirm('Delete this file?')) return;
     setFiles(files.filter(f => f.id !== file.id)); // Optimistic delete
+    
+    const { error } = await supabase.from('files').update({ deleted_at: new Date().toISOString() }).eq('id', file.id as string);
+    if (error) {
+      alert('Failed to delete file: ' + error.message);
+      setFiles(files);
+      return;
+    }
+
     if (file.storage_path) {
       const pathsToRemove = [file.storage_path as string];
       if (file.metadata?.thumbnail_path) pathsToRemove.push(file.metadata.thumbnail_path);
       await supabase.storage.from(STORAGE_BUCKET).remove(pathsToRemove);
     }
-    await supabase.from('files').update({ deleted_at: new Date().toISOString() }).eq('id', file.id as string);
+    
     await supabase.from('activity_logs').insert({ action: 'Document deleted', item_type: 'file', details: file.name as string });
   };
   

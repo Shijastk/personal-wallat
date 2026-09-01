@@ -1,31 +1,32 @@
 import { Upload, Award, Briefcase, KeyRound, CreditCard, StickyNote, FileText, Link2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Modal } from '@/components/ui/Modal';
-import type { Route } from '@/components/Layout';
 
 interface QuickAddModalProps {
   open: boolean;
   onClose: () => void;
-  onNavigate: (route: Route) => void;
   onUpload: () => void;
 }
 
 const actions = [
-  { label: 'Upload Document', icon: <Upload className="h-5 w-5" />, route: 'documents' as Route, color: 'text-brand-600' },
-  { label: 'Add Certificate', icon: <Award className="h-5 w-5" />, route: 'certificates' as Route, color: 'text-amber-600' },
-  { label: 'Add Project', icon: <Briefcase className="h-5 w-5" />, route: 'projects' as Route, color: 'text-emerald-600' },
-  { label: 'Add Resume', icon: <FileText className="h-5 w-5" />, route: 'resumes' as Route, color: 'text-violet-600' },
-  { label: 'Add Password', icon: <KeyRound className="h-5 w-5" />, route: 'passwords' as Route, color: 'text-red-600' },
-  { label: 'Add Card', icon: <CreditCard className="h-5 w-5" />, route: 'cards' as Route, color: 'text-sky-600' },
-  { label: 'Add Secure Note', icon: <StickyNote className="h-5 w-5" />, route: 'notes' as Route, color: 'text-orange-600' },
-  { label: 'Add Profile Link', icon: <Link2 className="h-5 w-5" />, route: 'profile' as Route, color: 'text-purple-600' },
+  { label: 'Upload Document', icon: <Upload className="h-5 w-5" />, path: '/documents', color: 'text-brand-600' },
+  { label: 'Add Certificate', icon: <Award className="h-5 w-5" />, path: '/certificates', color: 'text-amber-600' },
+  { label: 'Add Project', icon: <Briefcase className="h-5 w-5" />, path: '/projects', color: 'text-emerald-600' },
+  { label: 'Add Resume', icon: <FileText className="h-5 w-5" />, path: '/resumes', color: 'text-violet-600' },
+  { label: 'Add Password', icon: <KeyRound className="h-5 w-5" />, path: '/passwords', color: 'text-red-600' },
+  { label: 'Add Card', icon: <CreditCard className="h-5 w-5" />, path: '/cards', color: 'text-sky-600' },
+  { label: 'Add Secure Note', icon: <StickyNote className="h-5 w-5" />, path: '/notes', color: 'text-orange-600' },
+  { label: 'Add Profile Link', icon: <Link2 className="h-5 w-5" />, path: '/profile', color: 'text-purple-600' },
 ];
 
-export function QuickAddModal({ open, onClose, onNavigate, onUpload }: QuickAddModalProps) {
+export function QuickAddModal({ open, onClose, onUpload }: QuickAddModalProps) {
+  const navigate = useNavigate();
+
   const handleAction = (action: (typeof actions)[number]) => {
     if (action.label === 'Upload Document') {
       onUpload();
     } else {
-      onNavigate(action.route);
+      navigate(action.path);
     }
     onClose();
   };
